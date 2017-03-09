@@ -15,7 +15,15 @@ echo -e "\e[36m                 OVMF VFIO Passthrough "
 for i in {16..35} {35..16} ; do echo -en "\e[38;5;${i}m-\e[0m" ; done ; echo
 
 echo -e "\e[92m"
-echo "making vfio script executable..."
+
+#
+# grant permissions
+#
+sudo chown danalec:users /dev/vfio/1
+sudo chown danalec:users /dev/vfio/7
+sudo chown danalec:users /dev/bus/usb/001/004
+sudo chown danalec:users /dev/bus/usb/001/006
+
 sudo chmod +x $HOME/kvm/vfio
 
 ##
@@ -135,8 +143,6 @@ sudo chmod 755 /dev/net/
 #
 # grant user usb access
 #
-# sudo chown danalec:users /dev/bus/usb/001/007
-#
 # turn off the second monitor
 echo "turning off second monitor..."
 xrandr --output HDMI-2 --off
@@ -151,7 +157,7 @@ echo "checking if the keyboard layout is us alt-intl..."
 setxkbmap -query | grep 'alt-intl' &> /dev/null
 if [ $? = 0 ]; then
    altintl=1
-   echo "us alt-intl wis activated"
+   echo "us alt-intl was activated"
 else
    echo "us alt-intl is not activated"
 fi
