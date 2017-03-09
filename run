@@ -1,0 +1,370 @@
+#/bin/bash
+
+# kvm setup by @danalec
+# v01 alpha
+
+echo ""
+for i in {16..34} {34..16} ; do echo -en "\e[38;5;${i}m-\e[0m" ; done ; echo
+echo -e "\e[92m  :::  .   :::      .::..        :     "
+echo -e "\e[10m  ;;; .;;,.';;,   ,;;;' ;;,.    ;;;    "
+echo -e "\e[32m  [[[[[/'   \[[  .[[/   [[[[, ,[[[[,   "
+echo -e "\e[32m  &&&&,      Y&c.&&     &&&&&&&& &&&   "
+echo -e "\e[10m  888 88o,    Y88P      888 Y88  888o  "
+echo -e "\e[92m  MMM  MMP     MP       MMM  M'   MMM  "
+echo -e "\e[36m                 OVMF VFIO Passthrough "
+for i in {16..35} {35..16} ; do echo -en "\e[38;5;${i}m-\e[0m" ; done ; echo
+
+echo -e "\e[92m"
+echo "making vfio script executable..."
+sudo chmod +x $HOME/kvm/vfio
+
+##
+### root required
+##
+#
+# modprobe.d
+#
+# /etc/modprobe.d/kvm.conf
+echo "checking if /etc/modprobe.d/kvm.conf exists..."
+if [ -f "/etc/modprobe.d/kvm.conf" ]; then
+  echo "/etc/modprobe.d/kvm.conf exists"
+fi
+
+if [ ! -f "/etc/modprobe.d/kvm.conf" ]; then
+  echo "creating new kvm.conf..."
+  sudo touch /etc/modprobe.d/kvm.conf
+  echo "writing to kvm.conf..."
+  echo 'options kvm ignore_msrs=1' | sudo tee --append /etc/modprobe.d/kvm.conf
+fi
+
+# /etc/modprobe.d/vfio.conf
+echo "checking if /etc/modprobe.d/vfio.conf exists..."
+if [ -f "/etc/modprobe.d/vfio.conf" ]; then
+  echo "/etc/modprobe.d/vfio.conf exists"
+fi
+
+# lspci -nnk
+if [ ! -f "/etc/modprobe.d/vfio.conf" ]; then
+  echo "creating new vfio.conf..."
+  sudo touch /etc/modprobe.d/vfio.conf
+  echo "writing to the new vfio.conf..."
+  echo 'options vfio_iommu_type1 allow_unsafe_interrupts=1' | sudo tee --append /etc/modprobe.d/vfio.conf
+  echo 'options vfio-pci ids=10de:1c02,10de:10f1' | sudo tee --append /etc/modprobe.d/vfio.conf
+fi
+
+#
+# vfio bind
+#
+echo "probing vfio..."
+sudo modprobe vfio
+if [[ $? -ne 0 ]]; then
+    echo -e "\e[36merror probing vfio"
+    exit 1
+fi
+
+echo "probing vfio-pci..."
+sudo modprobe vfio-pci
+if [[ $? -ne 0 ]]; then
+    echo -e "\e[36merror probing vfio-pci"
+    exit 1
+fi
+
+echo "probing vfio_iommu_type1..."
+sudo modprobe vfio_iommu_type1
+if [[ $? -ne 0 ]]; then
+    echo -e "\e[36merror probing vfio_iommu_type1"
+    exit 1
+fi
+
+echo "probing vfio_virqfd..."
+sudo modprobe vfio_virqfd
+if [[ $? -ne 0 ]]; then
+    echo -e "\e[36merror probing vfio_virqfd"
+    exit 1
+fi
+
+
+# 01:00.0 VGA compatible controller [0300]: NVIDIA Corporation GP106 [GeForce GTX 1060 3GB] [10de:1c02] (rev a1)
+# 01:00.1 Audio device [0403]: NVIDIA Corporation Device [10de:10f1] (rev a1)
+# 07:00.0 USB controller: Intel Corporation DSL6540 USB 3.1 Controller [Alpine Ridge]
+echo "binding vfio devices..."
+sudo sh $HOME/kvm/vfio -b 0000:01:00.0
+#it is not necessary to vfio -b 0000:01:00.1
+sudo sh $HOME/kvm/vfio -b 0000:07:00.0
+
+#
+# hugepages
+#
+# the size of each page is 2MB, therefore 4096 means 8GB
+echo "setting hugepages..."
+sudo sysctl -w vm.nr_hugepages=4096
+sudo sysctl -w vm.hugetlb_shm_group=78
+
+echo "checking if hugepages folder exists..."
+if [ -d "/dev/hugepages/qemu" ]; then
+  echo "it exists, but will be deleted..."
+  sudo rm -rf /dev/hugepages/qemu
+fi
+if [ ! -f "/dev/hugepages/qemu" ]; then
+  echo "creating a new hugepages folder..."
+  sudo mkdir /dev/hugepages/qemu
+  sudo chown danalec:kvm /dev/hugepages/qemu
+fi
+
+#
+# tuntap
+#
+echo "setting tuntap device..."
+sudo tunctl -t tap0 -u danalec -g users
+sudo chown danalec:users /dev/net/tun
+sudo chmod 755 /dev/net/
+
+#sudo mknod /dev/net/tun c 10 200
+#CONFIG_TUN=m
+
+#
+##
+### end of root required
+##
+
+#
+##
+### pre-qemu
+##
+
+#
+# grant user usb access
+#
+# sudo chown danalec:users /dev/bus/usb/001/007
+#
+# turn off the second monitor
+echo "turning off second monitor..."
+xrandr --output HDMI-2 --off
+
+echo "loading synergyc..."
+exec synergyc --enable-crypto 192.168.1.3:24800 & disown
+# windows should trigger synergy with admin rights: sc.exe start Synergy
+
+# before running qemu check if us alt-intl is enabled
+altintl=0
+echo "checking if the keyboard layout is us alt-intl..."
+setxkbmap -query | grep 'alt-intl' &> /dev/null
+if [ $? = 0 ]; then
+   altintl=1
+   echo "us alt-intl wis activated"
+else
+   echo "us alt-intl is not activated"
+fi
+
+##
+### end of pre-qemu
+##
+#
+
+echo ""
+echo "now loading..."
+echo ""
+echo "  __ _  ___ _ __ ___  _   _  "
+echo " / _"$'`' $'|'/ _ \\ "'"_ $'`' _ \\$'|' $'|' $'|' $'|'
+echo $'|'" (_"$'|' $'|'$'|'  __/ $'|' $'|' $'|' $'|' $'|' $'|'_$'|' $'|'
+echo " "\\"__, "$'|'\\"___"$'|'_$'|' $'|'_$'|' $'|'_$'|'\\__,_$'|'
+echo "    "$'|'_$'|'
+
+#
+# Audio
+#
+# turn off other audio sources for hdmi audio
+export QEMU_AUDIO_DRV=none
+export QEMU_AUDIO_TIMER_PERIOD=10
+
+#export QEMU_AUDIO_DRV=alsa
+#export QEMU_ALSA_ADC_BUFFER_SIZE=1024 QEMU_ALSA_ADC_PERIOD_SIZE=256
+#export QEMU_ALSA_DAC_BUFFER_SIZE=1024 QEMU_ALSA_DAC_PERIOD_SIZE=256
+#export QEMU_AUDIO_DAC_FIXED_SETTINGS=1
+#export QEMU_AUDIO_DAC_FIXED_FREQ=44100 QEMU_AUDIO_DAC_FIXED_FMT=S16 QEMU_AUDIO_ADC_FIXED_FREQ=44100 QEMU_AUDIO_ADC_FIXED_FMT=S16
+#export QEMU_AUDIO_DAC_TRY_POLL=1 QEMU_AUDIO_ADC_TRY_POLL=1
+#export QEMU_AUDIO_TIMER_PERIOD=50
+
+#export QEMU_AUDIO_DRV=pa
+#export QEMU_PA_SAMPLES=8192
+#export QEMU_PA_SAMPLES=6144
+#export QEMU_AUDIO_TIMER_PERIOD=99
+#export QEMU_PA_SERVER=unix:/tmp/pulse
+
+D=""
+#
+# Label
+#
+VMNAME=windows
+D="$D -name $VMNAME,process=$VMNAME"
+
+#
+# CPU
+#
+#D="$D -machine q35,kernel_irqchiD=on,mem-merge=off"
+#,hv_time,hv_relaxed,hv_vapic,hv_spinlocks=0x1fff,hv_vendor_id=12CHARID
+D="$D -cpu host,kvm=off"
+D="$D -smp 4,cores=2,threads=2"
+#D="$D -smp 6,cores=3,threads=3"
+D="$D -rtc base=localtime,clock=host"
+#D="$D -global kvm-pit.lost_tick_policy=discard"
+#D="$D -boot strict=on"
+
+# Enable KVM full virtualization support
+D="$D -enable-kvm"
+
+# Enable Hugepages and pre-allocate
+D="$D -mem-path /dev/hugepages/qemu"
+D="$D -mem-prealloc"
+
+# Assign memory to the VM
+D="$D -m 8G"
+
+#
+# VFIO GPU HDMI Video & Sound passthrough
+#
+#01:00.0 VGA compatible controller [0300]: NVIDIA Corporation GP106 [GeForce GTX 1060 3GB] [10de:1c02] (rev a1)
+#01:00.1 Audio device [0403]: NVIDIA Corporation Device [10de:10f1] (rev a1)
+D="$D -device vfio-pci,host=01:00.0,multifunction=on"
+D="$D -device vfio-pci,host=01:00.1"
+
+#
+# VFIO USB Controller passthrough
+#
+# usb bugs everywhere, specially here
+#07:00.0 USB controller: Intel Corporation DSL6540 USB 3.1 Controller [Alpine Ridge]
+D="$D -device vfio-pci,host=07:00.0"
+
+# Passthrough USB devices
+D="$D -usb"
+
+#Logitech, Inc. Unifying Receiver
+#D="$D -usbdevice host:046d:c52b"
+
+#Logitech, Inc. Webcam C270
+D="$D -usbdevice host:046d:0825"
+
+#Microsoft Corp. Xbox 360 Wireless Adapter
+#D="$D -usbdevice host:045e:0719"
+
+#Razer USA, Ltd
+D="$D -usbdevice host:1532:0041"
+
+#Holtek Semiconductor, Inc. Keyboard LKS02
+D="$D -usbdevice host:04d9:1702"
+
+
+#
+# USB 2.0
+#
+# EHCI Adapter
+D="$D -device usb-ehci,id=ehci"
+
+#1a40:0101 Terminus Technology Inc. Hubc
+#1a40:0201 Terminus Technology Inc. FE 2.1 7-port Hub
+#D="$D -device usb-host,bus=ehci.0,vendorid=0x1a40,productid=0x0101"
+#D="$D -device usb-host,bus=ehci.0,vendorid=0x1a40,productid=0x0201"
+#D="$D -usbdevice host:1a40:0101"
+#D="$D -usbdevice host:1a40:0201"
+
+
+#
+# USB 3.0
+#
+# XHCI Adapter
+D="$D -device nec-usb-xhci,id=xhci"
+#D="$D -device usb-host,bus=xhci.0,vendorid=0x,productid=0x"
+
+#VIA Labs, Inc. VL812 Hub
+#D="$D -device usb-hub host:2109:0812"
+
+#Seagate RSS LLC 
+#D="$D -usbdevice host:0bc2:2322,usb3=yes"
+#D="$D -device usb-ehci,id=usb,bus=pci.0,addr=0x6"
+
+
+#
+# Video
+#
+# Emulated video device
+#D="$D -vga qxl"
+
+# Disable VGA for GPU Passthrough
+D="$D -nographic"
+D="$D -vga none"
+
+# Emulate a sound device
+#D="$D -soundhw ac97"
+
+# Redirect QEMU's console input and output
+#D="$D -monitor stdio"
+
+# Misc
+D="$D -serial none"
+D="$D -parallel none"
+D="$D -balloon none"
+
+# No Shutdown / Hibernation
+#D="$D -no-shutdown"
+
+# Supply OVMF (general UEFI bios, needed for EFI boot support with GPT disks)
+# pacaur -S ovmf-git && cp /usr/share/ovmf/x64/ovmf_x64.bin $HOME/kvm/ovmf_x64.bin
+D="$D -drive if=pflash,format=raw,readonly,file=$HOME/kvm/ovmf_x64.bin"
+
+#
+# Controllers
+#
+# Load virtio SCSI controller
+D="$D -device virtio-scsi-pci,id=scsi"
+
+# Load VM image as a harddrive
+# to create an image: qemu-img create -f qcow2 -o preallocation=metadata win.img 120G
+D="$D -drive file=$HOME/kvm/win.img,id=disk,format=qcow2,if=none,cache=writeback -device scsi-hd,drive=disk"
+
+# Load our OS setup image and drivers ISO
+#wget https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-0.1.133-1/virtio-win-0.1.133.iso
+#D="$D -drive file=$HOME/kvm/virtio-win-0.1.133.iso,id=virtiocd,if=none,format=raw -device ide-cd,bus=ide.1,drive=virtiocd"
+#D="$D -drive file=$HOME/kvm/Win10_1607_N_English_x64.iso,id=isocd,format=raw,if=none -device scsi-cd,drive=isocd"
+
+#
+# Network
+#
+#,vhost=on
+D="$D -net nic,model=virtio -net tap,ifname=tap0,script=no,downscript=no"
+
+qemu-system-x86_64 $D
+
+#
+##
+### post-qemu
+##
+
+# kill synergyc
+echo ""
+if [ "$(pidof synergyc)" ]
+then
+  echo -e "\e[8mgracefully killing synergyc..."
+  killall -2 synergyc
+else
+  echo ""
+  echo -e "\e[36msynergyc is already dead."
+fi
+
+# us alt-intl restore
+echo ""
+if [ "$altintl" == "1" ]; then
+  setxkbmap us alt-intl
+  echo "keyboard us alt-intl restored"
+fi
+
+# unbind vfio
+# note: ibm's script is behaving odd
+#echo "unbinding vfio devices..."
+#sudo sh vfio -u 0000:01:00.0
+#sudo sh vfio -u 0000:01:00.1
+#sudo sh vfio -u 0000:07:00.0
+
+##
+### end of post-qemu
+##
+#
