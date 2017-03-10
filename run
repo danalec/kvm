@@ -370,6 +370,10 @@ fi
 #sudo sh vfio -u 0000:01:00.1
 #sudo sh vfio -u 0000:07:00.0
 
+# turn monitor 2 on again
+xrandr --output HDMI-2 --auto
+xrandr --output HDMI-2 --right-of HDMI-1
+
 ##
 ### end of post-qemu
 ##
