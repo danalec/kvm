@@ -19,11 +19,6 @@ echo -e "\e[92m"
 #
 # grant permissions
 #
-sudo chown danalec:users /dev/vfio/1
-sudo chown danalec:users /dev/vfio/7
-sudo chown danalec:users /dev/bus/usb/001/004
-sudo chown danalec:users /dev/bus/usb/001/006
-
 sudo chmod +x $HOME/kvm/vfio
 
 ##
@@ -90,7 +85,7 @@ if [[ $? -ne 0 ]]; then
     echo -e "\e[36merror probing vfio_virqfd"
     exit 1
 fi
-
+sleep 0.5
 
 # 01:00.0 VGA compatible controller [0300]: NVIDIA Corporation GP106 [GeForce GTX 1060 3GB] [10de:1c02] (rev a1)
 # 01:00.1 Audio device [0403]: NVIDIA Corporation Device [10de:10f1] (rev a1)
@@ -116,7 +111,7 @@ fi
 if [ ! -f "/dev/hugepages/qemu" ]; then
   echo "creating a new hugepages folder..."
   sudo mkdir /dev/hugepages/qemu
-  sudo chown danalec:kvm /dev/hugepages/qemu
+  sudo chown danalec:users /dev/hugepages/qemu
 fi
 
 #
@@ -131,6 +126,15 @@ sudo chmod 755 /dev/net/
 #CONFIG_TUN=m
 
 #
+# grant permissions
+#
+echo "grand permissions for vfio..."
+sudo chown danalec:users /dev/vfio/1
+sudo chown danalec:users /dev/vfio/7
+sudo chown danalec:users /dev/bus/usb/001/004
+sudo chown danalec:users /dev/bus/usb/001/006
+
+#
 ##
 ### end of root required
 ##
@@ -140,9 +144,6 @@ sudo chmod 755 /dev/net/
 ### pre-qemu
 ##
 
-#
-# grant user usb access
-#
 # turn off the second monitor
 echo "turning off second monitor..."
 xrandr --output HDMI-2 --off
