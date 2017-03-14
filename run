@@ -210,12 +210,12 @@ D="$D -name $VMNAME,process=$VMNAME"
 #
 D="$D -machine pc,kernel_irqchip=on,mem-merge=off"
 #D="$D -cpu host,kvm=off
-D="$D -cpu host,kvm=off,hv_relaxed,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_vendor_id=12CHARID"
+D="$D -cpu host,kvm=off,hv_relaxed,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_vendor_id=whatever"
 D="$D -smp 4,cores=2,threads=2"
 #D="$D -smp 6,cores=3,threads=3"
 D="$D -rtc base=localtime,clock=host"
-#D="$D -global kvm-pit.lost_tick_policy=discard"
-#D="$D -boot strict=on"
+D="$D -global kvm-pit.lost_tick_policy=discard"
+D="$D -boot strict=on"
 
 # Enable KVM full virtualization support
 D="$D -enable-kvm"
