@@ -208,8 +208,8 @@ D="$D -name $VMNAME,process=$VMNAME"
 #
 # CPU
 #
-#D="$D -machine q35,kernel_irqchiD=on,mem-merge=off"
-#,hv_time,hv_relaxed,hv_vapic,hv_spinlocks=0x1fff,hv_vendor_id=12CHARID
+#D="$D -machine q35,kernel_irqchip=on,mem-merge=off,hv_time,hv_relaxed,hv_vapic,hv_spinlocks=0x1fff"
+#,hv_vendor_id=12CHARID
 D="$D -cpu host,kvm=off"
 D="$D -smp 4,cores=2,threads=2"
 #D="$D -smp 6,cores=3,threads=3"
