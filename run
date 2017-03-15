@@ -87,6 +87,13 @@ if [[ $? -ne 0 ]]; then
 fi
 sleep 0.5
 
+#echo "probing ehci-hcd..."
+#sudo modprobe -r ehci-hcd
+#if [[ $? -ne 0 ]]; then
+#    echo -e "\e[36merror probing ehci-hcd"
+#    exit 1
+#fi
+
 # 01:00.0 VGA compatible controller [0300]: NVIDIA Corporation GP106 [GeForce GTX 1060 3GB] [10de:1c02] (rev a1)
 # 01:00.1 Audio device [0403]: NVIDIA Corporation Device [10de:10f1] (rev a1)
 # 07:00.0 USB controller: Intel Corporation DSL6540 USB 3.1 Controller [Alpine Ridge]
@@ -131,8 +138,14 @@ sudo chmod 755 /dev/net/
 echo "grand permissions for vfio..."
 sudo chown danalec:users /dev/vfio/1
 sudo chown danalec:users /dev/vfio/7
-sudo chown danalec:users /dev/bus/usb/001/004
-sudo chown danalec:users /dev/bus/usb/001/006
+
+usb[0]='Razer' #Razer USA, Ltd
+usb[1]='Holtek' #Holtek Semiconductor, Inc. Keyboard LKS02
+for grep in "${usb[@]}"
+do
+   lsusb | grep $grep | awk '{ system ("sudo chown danalec:users /dev/bus/usb/"$2"/"substr($4, 1, length($4)-1)) }'
+done
+
 
 #
 ##
@@ -209,7 +222,6 @@ D="$D -name $VMNAME,process=$VMNAME"
 # CPU
 #
 D="$D -machine pc,kernel_irqchip=on,mem-merge=off"
-#D="$D -cpu host,kvm=off
 D="$D -cpu host,kvm=off,hv_relaxed,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_vendor_id=whatever"
 D="$D -smp 4,cores=2,threads=2"
 #D="$D -smp 6,cores=3,threads=3"
@@ -238,9 +250,8 @@ D="$D -device vfio-pci,host=01:00.1"
 #
 # VFIO USB Controller passthrough
 #
-# usb bugs everywhere, specially here
 #07:00.0 USB controller: Intel Corporation DSL6540 USB 3.1 Controller [Alpine Ridge]
-D="$D -device vfio-pci,host=07:00.0"
+#D="$D -device vfio-pci,host=07:00.0"
 
 # Passthrough USB devices
 D="$D -usb"
@@ -249,7 +260,7 @@ D="$D -usb"
 #D="$D -usbdevice host:046d:c52b"
 
 #Logitech, Inc. Webcam C270
-D="$D -usbdevice host:046d:0825"
+#D="$D -usbdevice host:046d:0825"
 
 #Microsoft Corp. Xbox 360 Wireless Adapter
 #D="$D -usbdevice host:045e:0719"
@@ -265,7 +276,7 @@ D="$D -usbdevice host:04d9:1702"
 # USB 2.0
 #
 # EHCI Adapter
-D="$D -device usb-ehci,id=ehci"
+#D="$D -device usb-ehci,id=ehci"
 
 #1a40:0101 Terminus Technology Inc. Hubc
 #1a40:0201 Terminus Technology Inc. FE 2.1 7-port Hub
@@ -279,7 +290,7 @@ D="$D -device usb-ehci,id=ehci"
 # USB 3.0
 #
 # XHCI Adapter
-D="$D -device nec-usb-xhci,id=xhci"
+#D="$D -device nec-usb-xhci,id=xhci"
 #D="$D -device usb-host,bus=xhci.0,vendorid=0x,productid=0x"
 
 #VIA Labs, Inc. VL812 Hub
