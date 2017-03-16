@@ -6,7 +6,7 @@
 
 #### config ####
 
-USERNAME="danalec"
+USERNAME=$USER
 GROUP="users"
 
 VMNAME="windows"
