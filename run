@@ -266,13 +266,12 @@ qemu-system-x86_64 $D
 
 # kill synergyc
 echo ""
-if [ "$(pidof synergyc)" ]
-then
-  echo -e "\e[8mgracefully killing synergyc..."
-  killall -2 synergyc
-else
-  echo ""
-  echo -e "\e[36msynergyc is already dead."
+if [ "$(pidof synergyc)" ]; then
+    echo -e "\e[8mgracefully killing synergyc..."
+    killall -2 synergyc
+  else
+    echo ""
+    echo -e "\e[36msynergyc is already dead."
 fi
 
 # us alt-intl restore
