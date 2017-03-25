@@ -3,32 +3,62 @@
 # run kvm v01 alpha
 # by @danalec
 
-
 #### config ####
 
 USERNAME=$USER
 GROUP="users"
 
 VMNAME="windows"
-VMIP="192.168.1.3"
+MEMORY=8
+SMP=4
+CORES=2
+THREADS=2
 
-# usb passthrough
-USB[0]="Razer" #Razer USA, Ltd
-USB[1]="Holtek" #Holtek Semiconductor, Inc.
+# USB Passthrough
+USB[0]="Razer"
+USB[1]="Holtek"
 
-# pci passthrough
+# PCI-E Passthrough
 PCI[0]="0000:01:00.0"
 PCI[1]="0000:01:00.1"
-#PCI[2]="0000:05:00.0"
-#PCI[3]="0000:07:00.0"
+PCI[2]="0000:09:00.0"
+PCI[3]="0000:00:1f.6"
 
-# sound (set none for hdmi)
+# Sound (set "none" for hdmi)
 QEMU_AUDIO_DRV="none"
 
-# keyboard layout fix
+# Keyboard layout fix
 KEYBOARD="us alt-intl"
 
+# Synergy
+IP="192.168.1.3"
+PORT="24800"
+
 #### end of config ####
+
+## before-qemu tasks ##
+echo "turning off second monitor..."
+xrandr --output HDMI-2 --off
+
+
+if [ -f "/usr/bin/synergy" ]; then
+  echo "loading synergyc..."
+  exec synergyc --enable-crypto $IP:$PORT & disown
+  # windows guest should trigger synergy with admin rights
+  # sc.exe starts Synergy (while Synergys is running)
+fi
+
+altintl=0
+echo "checking if keyboard layout is us alt-intl..."
+setxkbmap -query | grep 'alt-intl' &> /dev/null
+if [ $? = 0 ]; then
+   altintl=1
+   echo "us alt-intl was activated"
+else
+   echo "us alt-intl is not activated"
+fi
+## end of before-qemu tasks ##
+
 
 ##ascii
 echo ""
@@ -47,27 +77,47 @@ echo -e "\e[92m"
 chmod +x $HOME/kvm/vfio # must be executable
 
 #### root required ####
-echo "checking if /etc/modprobe.d/kvm.conf exists..."
-if [ -f "/etc/modprobe.d/kvm.conf" ]; then
-  echo "/etc/modprobe.d/kvm.conf exists"
-fi
+echo "checking /etc/modprobe.d/kvm.conf ..."
 if [ ! -f "/etc/modprobe.d/kvm.conf" ]; then
   echo "creating new kvm.conf..."
   sudo touch /etc/modprobe.d/kvm.conf
   echo "writing to kvm.conf..."
   echo 'options kvm ignore_msrs=1' | sudo tee --append /etc/modprobe.d/kvm.conf
 fi
-echo "checking if /etc/modprobe.d/vfio.conf exists..."
-if [ -f "/etc/modprobe.d/vfio.conf" ]; then
-  echo "/etc/modprobe.d/vfio.conf exists"
-fi
+echo "checking /etc/modprobe.d/vfio.conf ..."
 if [ ! -f "/etc/modprobe.d/vfio.conf" ]; then
   echo "creating new vfio.conf..."
   sudo touch /etc/modprobe.d/vfio.conf
   echo "writing to the new vfio.conf..."
   echo 'options vfio_iommu_type1 allow_unsafe_interrupts=1' | sudo tee --append /etc/modprobe.d/vfio.conf
+  #todo
   echo 'options vfio-pci ids=10de:1c02,10de:10f1' | sudo tee --append /etc/modprobe.d/vfio.conf
 fi
+
+for PCI_DEVICE in "${PCI[@]}"
+do
+  echo "binding..."
+  vendor=$(sudo cat /sys/bus/pci/devices/$PCI_DEVICE/vendor)
+  device=$(sudo cat /sys/bus/pci/devices/$PCI_DEVICE/device)
+  if [ -e /sys/bus/pci/devices/$PCI_DEVICE/driver ]; then
+    echo $PCI_DEVICE | sudo tee --append /sys/bus/pci/devices/$PCI_DEVICE/driver/unbind
+  fi
+  echo $vendor $device | sudo tee --append /sys/bus/pci/drivers/vfio-pci/new_id
+done
+
+echo "setting hugepages..."
+sudo sysctl -w vm.nr_hugepages=$(expr $MEMORY \* 512)
+sudo sysctl -w vm.hugetlb_shm_group=78
+
+echo "checking if hugepages folder exists..."
+if [ ! -d "/dev/hugepages/qemu" ]; then
+  echo "creating a new hugepages folder..."
+  sudo mkdir /dev/hugepages/qemu
+  sudo chown $USERNAME:$GROUP /dev/hugepages/qemu
+fi
+
+echo "grant permissions for vfio..."
+sudo chown $USERNAME:$GROUP /dev/vfio/*
 
 echo "probing vfio..."
 sudo modprobe vfio
@@ -76,7 +126,7 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 echo "probing vfio-pci..."
-sudo modprobe vfio-pci
+sudo modprobe -i vfio-pci
 if [[ $? -ne 0 ]]; then
     echo -e "\e[36merror probing vfio-pci"
     exit 1
@@ -93,56 +143,12 @@ if [[ $? -ne 0 ]]; then
     echo -e "\e[36merror probing vfio_virqfd"
     exit 1
 fi
-sleep 0.5
+sleep 1
 
-#echo "probing ehci-hcd..."
-#sudo modprobe -r ehci-hcd
-#if [[ $? -ne 0 ]]; then
-#    echo -e "\e[36merror probing ehci-hcd"
-#    exit 1
-#fi
-
-echo "binding vfio devices..."
-for PCI_DEVICE in "${PCI[@]}"
-do
-  echo "binding "$PCI_DEVICE
-  sudo sh $HOME/kvm/vfio -b $PCI_DEVICE
-done
-
-echo "setting hugepages..."
-sudo sysctl -w vm.nr_hugepages=4096 # the size of each page is 2MB, therefore 4096 means 8GB
-sudo sysctl -w vm.hugetlb_shm_group=78
-
-echo "checking if hugepages folder exists..."
-if [ -d "/dev/hugepages/qemu" ]; then
-  echo "it exists, nothing done"
-  #sudo rm -rf /dev/hugepages/qemu
-fi
-if [ ! -f "/dev/hugepages/qemu" ]; then
-  echo "creating a new hugepages folder..."
-  sudo mkdir /dev/hugepages/qemu
-  sudo chown $USERNAME:$GROUP /dev/hugepages/qemu
-fi
-
-echo "setting tuntap device..."
-sudo tunctl -t tap0 -u danalec -g users
-sudo chown $USERNAME:$GROUP /dev/net/tun
-sudo chmod 755 /dev/net/
-
-echo "grant permissions for vfio..."
-n=0
-for i in "${PCI[@]}"
-do
-   n=$((n+1))
-   i=${i#0*:}
-   PCI_VFIO_U[${n}]=${i:1:1}
-done
-PCI_VFIO=($(echo "${PCI_VFIO_U[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
-for i in "${PCI_VFIO[@]}"
-do
-   echo "grant permissions for /dev/vfio/"$i
-   sudo chown $USERNAME:$GROUP /dev/vfio/$i
-done
+#echo "setting tuntap device..."
+#sudo tunctl -t tap0 -u danalec -g users
+#sudo chown $USERNAME:$GROUP /dev/net/tun
+#sudo chmod 755 /dev/net/
 
 for grep in "${USB[@]}"
 do
@@ -151,30 +157,7 @@ do
 done
 #### end of required root ####
 
-
-## before-qemu tasks ##
-echo "turning off second monitor..."
-xrandr --output HDMI-2 --off
-
-echo "loading synergyc..."
-exec synergyc --enable-crypto $VMIP:24800 & disown
-# windows guest should trigger synergy with admin rights: sc.exe start Synergy (while Synergys is running)
-
-altintl=0
-echo "checking if keyboard layout is us alt-intl..."
-setxkbmap -query | grep 'alt-intl' &> /dev/null
-if [ $? = 0 ]; then
-   altintl=1
-   echo "us alt-intl was activated"
-else
-   echo "us alt-intl is not activated"
-fi
-## end of before-qemu tasks ##
-
-
 ##ascii
-echo ""
-echo "now loading..."
 echo ""
 echo "  __ _  ___ _ __ ___  _   _  "
 echo " / _"$'`' $'|'/ _ \\ "'"_ $'`' _ \\$'|' $'|' $'|' $'|'
@@ -183,23 +166,23 @@ echo " "\\"__, "$'|'\\"___"$'|'_$'|' $'|'_$'|' $'|'_$'|'\\__,_$'|'
 echo "    "$'|'_$'|'
 ##end of ascii
 
-
-##todo
 export QEMU_AUDIO_DRV=$QEMU_AUDIO_DRV
 export QEMU_AUDIO_TIMER_PERIOD=10
 
-#export QEMU_AUDIO_DRV=alsa
-#export QEMU_ALSA_ADC_BUFFER_SIZE=1024 QEMU_ALSA_ADC_PERIOD_SIZE=256
-#export QEMU_ALSA_DAC_BUFFER_SIZE=1024 QEMU_ALSA_DAC_PERIOD_SIZE=256
-#export QEMU_AUDIO_DAC_FIXED_SETTINGS=1
-#export QEMU_AUDIO_DAC_FIXED_FREQ=44100 QEMU_AUDIO_DAC_FIXED_FMT=S16 QEMU_AUDIO_ADC_FIXED_FREQ=44100 QEMU_AUDIO_ADC_FIXED_FMT=S16
-#export QEMU_AUDIO_DAC_TRY_POLL=1 QEMU_AUDIO_ADC_TRY_POLL=1
+if [[ $QEMU_AUDIO_DRV == "alsa" ]]; then
+  export QEMU_ALSA_ADC_BUFFER_SIZE=1024 QEMU_ALSA_ADC_PERIOD_SIZE=256
+  export QEMU_ALSA_DAC_BUFFER_SIZE=1024 QEMU_ALSA_DAC_PERIOD_SIZE=256
+  export QEMU_AUDIO_DAC_FIXED_SETTINGS=1
+  export QEMU_AUDIO_DAC_FIXED_FREQ=44100 QEMU_AUDIO_DAC_FIXED_FMT=S16 QEMU_AUDIO_ADC_FIXED_FREQ=44100 QEMU_AUDIO_ADC_FIXED_FMT=S16
+  export QEMU_AUDIO_DAC_TRY_POLL=1 QEMU_AUDIO_ADC_TRY_POLL=1
+fi
 
-#export QEMU_AUDIO_DRV=pa
-#export QEMU_PA_SAMPLES=8192
-#export QEMU_PA_SAMPLES=6144
-#export QEMU_AUDIO_TIMER_PERIOD=99
-#export QEMU_PA_SERVER=unix:/tmp/pulse
+if [[ $QEMU_AUDIO_DRV == "pa" ]]; then
+  export QEMU_PA_SAMPLES=8192
+  export QEMU_PA_SAMPLES=6144
+  export QEMU_AUDIO_TIMER_PERIOD=99
+  export QEMU_PA_SERVER=unix:/tmp/pulse
+fi
 
 D=""
 D="$D -name $VMNAME,process=$VMNAME"
@@ -207,32 +190,32 @@ D="$D -name $VMNAME,process=$VMNAME"
 # CPU
 D="$D -machine pc,kernel_irqchip=on,mem-merge=off"
 D="$D -cpu host,kvm=off,hv_relaxed,hv_spinlocks=0x1fff,hv_vapic,hv_time,hv_vendor_id=whatever"
-D="$D -smp 4,cores=2,threads=2"
-#D="$D -smp 6,cores=3,threads=3"
+D="$D -smp $SMP,cores=$CORES,threads=$THREADS"
 D="$D -rtc base=localtime,clock=host"
 D="$D -global kvm-pit.lost_tick_policy=discard"
 D="$D -boot strict=on"
-D="$D -enable-kvm" # enable KVM full virtualization support
-D="$D -mem-path /dev/hugepages/qemu" # enable hugepages
-D="$D -mem-prealloc" # pre-allocate
-D="$D -m 8G" # assign memory to the VM
+D="$D -enable-kvm"
+D="$D -mem-path /dev/hugepages/qemu"
+D="$D -mem-prealloc"
+D="$D -m "$MEMORY"G"
 
-for i in "${PCI[@]}" # VFIO GPU HDMI Video & Sound passthrough
+# PCI Passthrough
+for i in "${PCI[@]}"
 do
    D="$D -device vfio-pci,host=$i,multifunction=on"
 done
 
-D="$D -usb" # USB devices passthrough
+# USB Passthrough
+D="$D -usb"
 for i in "${USB[@]}"
 do
    D="$D -usbdevice host:$(lsusb | grep $i | awk '{ print $6 }')"
 done
 
-# USB 2.0 : EHCI Adapter
-#D="$D -device USB-ehci,id=ehci"
 # USB 3.0 : XHCI Adapter
-#D="$D -device nec-USB-xhci,id=xhci"
-#D="$D -device USB-host,bus=xhci.0,vendorid=0x,productid=0x"
+# D="$D -device nec-usb-xhci,id=xhci"
+# D="$D -device usb-host,bus=xhci.0,vendorid=0x8086,productid=0xa12f"
+# D="$D -device usb-host,bus=xhci.0,vendorid=0x8086,productid=0x15b6"
 
 #D="$D -vga qxl" # emulated video device
 D="$D -nographic -vga none" # disable VGA for GPU Passthrough
@@ -257,22 +240,25 @@ D="$D -drive file=$HOME/kvm/win.img,id=disk,format=qcow2,if=none,cache=writeback
 #D="$D -drive file=$HOME/kvm/virtio-win-0.1.133.iso,id=virtiocd,if=none,format=raw -device ide-cd,bus=ide.1,drive=virtiocd"
 #D="$D -drive file=$HOME/kvm/Win10_1607_N_English_x64.iso,id=isocd,format=raw,if=none -device scsi-cd,drive=isocd"
 
-D="$D -net nic,model=virtio -net tap,ifname=tap0,script=no,downscript=no" # network
+#D="$D -net nic,model=virtio -net tap,ifname=tap0,script=no,downscript=no" # network
 
 qemu-system-x86_64 $D
 
+## end of qemu ##
 
-## end of after-qemu tasks ##
-
-# kill synergyc
-echo ""
-if [ "$(pidof synergyc)" ]; then
+if [ -f "/usr/bin/synergy" ]; then
+  # kill synergyc
+  echo ""
+  if [ "$(pidof synergyc)" ]; then
     echo -e "\e[8mgracefully killing synergyc..."
     killall -2 synergyc
   else
     echo ""
     echo -e "\e[36msynergyc is already dead."
+  fi
 fi
+
+
 
 # us alt-intl restore
 echo ""
@@ -281,15 +267,6 @@ if [ "$altintl" == "1" ]; then
   echo "keyboard $KEYBOARD restored"
 fi
 
-# unbind vfio
-# note: ibm's script is behaving odd
-#echo "unbinding vfio devices..."
-#sudo sh vfio -u 0000:01:00.0
-#sudo sh vfio -u 0000:01:00.1
-#sudo sh vfio -u 0000:07:00.0
-
 # turn monitor 2 on again
 xrandr --output HDMI-2 --auto
 xrandr --output HDMI-2 --right-of HDMI-1
-
-## end of after-qemu tasks ##
