@@ -1,1 +1,1 @@
-my kvm setup :3
+# qemu kvm pci-e passthrough
